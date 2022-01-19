@@ -51,7 +51,7 @@ def feature_function2(utterance):
     weights[0] = 0.5
     weights[-1] = 0.5
     #define number of features per channel (7 as shortest recoring is 7)
-    N = 5
+    N = 7
     randoms = random.choices(indices, weights = weights, k=N)
        
     #define the empty feature vector
