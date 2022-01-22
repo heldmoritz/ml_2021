@@ -122,6 +122,7 @@ def array2bins(arr, n_bins=10) -> typing.List:
 
 
 def test_bins(n_bins=10):
+    print("\n", n_bins, "bins.")
     x_train, x_test, y_train, y_test = get_x_y(mean=True)
     x_train, y_train = shuffle_dependent_lists(x_train, y_train)
 
@@ -166,10 +167,12 @@ def perform_experiment(min_length=14, use_pca=False, trim=True, mean=True, n_com
 
 
 if __name__ == '__main__':
-    test_bins()
-    quit()
-    test_pca()
+    # test_bins()
+    # test_bins(8)
+    # test_bins(12)
+    # test_pca()
     perform_experiment()
+    quit()
     for n in range(1, 6):
         perform_experiment(use_pca=True, n_components=n)
 
