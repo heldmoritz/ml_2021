@@ -19,31 +19,6 @@ def series2features(time_series: typing.List):
     return [np.mean(time_series), np.std(time_series), linregress(list(range(0, len(time_series))), time_series).slope]
 
 
-def build_x_y(items, min_length, mean, trim, use_pca, n_components=2):
-    x = []
-    y = []
-    shortest_recording = 2**32-1
-    for i, (person, recordings) in enumerate(items):
-        for _, recording in recordings.items():
-            if len(recording) >= min_length:
-                shortest_recording = min(shortest_recording, len(recording))
-                if mean:
-                    x.append(list(map(np.mean, recording)))
-                else:
-                    x.append(recording)
-                y.append(i)
-    if trim:
-        x = [_x[:shortest_recording] for _x in x]
-    if trim and use_pca:
-        pca = PCA(n_components=n_components)
-        x_pca = pca.fit_transform(x)
-        x = pca.inverse_transform(x_pca)
-    else:
-        x = np.array(x, dtype=object)
-    y = np.array(y, dtype=int)
-    return x, y
-
-
 def test_pca():
     with open("ae_train.json", "r") as f:
         data = json.load(f)  # type: dict
