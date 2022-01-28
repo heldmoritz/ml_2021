@@ -1,11 +1,12 @@
 import numpy as np
 from hmmlearn import hmm
 
-from tsf import get_x_y, shuffle_dependent_lists
+from util import shuffle_dependent_lists, get_x_y
 
 
 def train_gmm_hmm(x_train, y_train, verbose=0) -> dict:
-    gmm_hmm_models = {}
+    """Trains n_classes HMM models."""
+    hmm_models = {}
 
     for label in range(9):
         x_label = [x_train[i] for i in range(len(x_train)) if y_train[i] == label]
@@ -17,9 +18,9 @@ def train_gmm_hmm(x_train, y_train, verbose=0) -> dict:
         model = hmm.GaussianHMM()
         model.fit(np.vstack(x_label), lengths=[len(x) for x in x_label])
 
-        gmm_hmm_models[label] = model
+        hmm_models[label] = model
     
-    return gmm_hmm_models
+    return hmm_models
 
 
 def hmm_score(x_train, y_train, x_test, y_test):
@@ -66,8 +67,8 @@ def main():
     # Set a random seed for repeatable results
     np.random.seed(30)
     x_train, x_test, y_train, y_test = get_x_y()
-    # print(cross_validation(x_train, y_train))
-    print(hmm_score(x_train, y_train, x_test, y_test))
+    print(cross_validation(x_train, y_train))
+    # print(hmm_score(x_train, y_train, x_test, y_test))
 
 
 if __name__ == '__main__':
