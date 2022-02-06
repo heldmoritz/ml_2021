@@ -1,5 +1,10 @@
-import numpy as np
+import json
+
 from hmmlearn import hmm
+import matplotlib.pyplot as plt
+import numpy as np
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 
 from util import shuffle_dependent_lists, get_x_y
 
@@ -12,51 +17,34 @@ DEFAULT_N_ITER = 10
 DEFAULT_TOL = 1e-2
 
 
-def train_gmm_hmm(x_train, y_train, n_iter=None, algorithm=None, tol=None, covariance_type=None, min_covar=None,
-                  n_components=None) -> dict:
+plt.rcParams.update({'font.size': 18})
+
+
+def train_gmm_hmm(x_train, y_train, params: dict) -> dict:
     """Trains n_classes HMM models."""
-    kwargs = {}
-
-    if n_iter is not None:
-        kwargs['n_iter'] = n_iter
-    if algorithm is not None:
-        kwargs['algorithm'] = algorithm
-    if tol is not None:
-        kwargs['tol'] = tol
-    if covariance_type is not None:
-        kwargs['covariance_type'] = covariance_type
-    if min_covar is not None:
-        kwargs['min_covar'] = min_covar
-    if n_components is not None:
-        kwargs['n_components'] = n_components
-
     hmm_models = {}
 
     for label in range(9):
         x_label = [x_train[i] for i in range(len(x_train)) if y_train[i] == label]
-
-        model = hmm.GaussianHMM(**kwargs)
+        model = hmm.GaussianHMM(**params)
         model.fit(np.vstack(x_label), lengths=[len(x) for x in x_label])
-
         hmm_models[label] = model
     
     return hmm_models
 
 
-def hmm_score(x_train, y_train, x_test, y_test, n_iter=None, algorithm=None, tol=None, covariance_type=None,
-              min_covar=None, n_components=None):
+def hmm_score(x_train, y_train, x_test, y_test, params: dict):
     """Trains HMM models on the training data and returns their accuracy on the test data.
     The accuracy is the fraction of test recordings which label matched the corresponding HMM model."""
-    hmm_models = train_gmm_hmm(x_train, y_train, n_iter=n_iter, algorithm=algorithm, tol=tol, min_covar=min_covar,
-                               covariance_type=covariance_type, n_components=n_components)
+    hmm_models = train_gmm_hmm(x_train, y_train, params)
 
     score_cnt = 0
     for i, recording in enumerate(x_test):
-        best_score = -1
+        best_score = None
         best_label = None
         for model_label, model in hmm_models.items():
             score = model.score(recording)
-            if score > best_score:
+            if best_score is None or score > best_score:
                 best_score = score
                 best_label = model_label
         if best_label == y_test[i]:
@@ -91,30 +79,19 @@ def cv_chunks(x, y, k):
     return chunks
 
 
-def cross_validation(x_full, y_full, cv=5, n_iter=None, algorithm=None, tol=None, covariance_type=None, min_covar=None,
-                     n_components=None, verbose=0):
+def cross_validation(x_full, y_full, params: dict, cv=5, verbose=0, shuffle=True):
     """Performs k-fold cross validation on HMM models"""
     if cv > len(x_full):
         raise ValueError(f"Not enough data (len(x_full)={len(x_full)}) to split into {cv} folds.")
-    if n_iter is None:
-        n_iter = DEFAULT_N_ITER
-    if algorithm is None:
-        algorithm = DEFAULT_ALGORITHM
-    if tol is None:
-        tol = DEFAULT_TOL
-    if covariance_type is None:
-        covariance_type = DEFAULT_COVARIANCE_TYPE
-    if min_covar is None:
-        min_covar = DEFAULT_MIN_COVAR
-    if n_components is None:
-        n_components = DEFAULT_N_COMPONENTS
 
     if verbose > 0:
-        print(f"n_iter={n_iter}, algorithm={algorithm}, tol={tol}, covariance_type={covariance_type}, "
-              f"min_covar={min_covar}, n_components={n_components}")
+        print(params)
 
-    x_shuffle, y_shuffle = shuffle_dependent_lists(x_full, y_full)
-    chunks = np.array_split(np.array(list(zip(x_shuffle, y_shuffle)), dtype=object), cv)
+    if shuffle:
+        x_shuffle, y_shuffle = shuffle_dependent_lists(x_full, y_full)
+        chunks = np.array_split(np.array(list(zip(x_shuffle, y_shuffle)), dtype=object), cv)
+    else:
+        chunks = np.array_split(np.array(list(zip(x_full, y_full)), dtype=object), cv)
     scores = []
 
     if verbose > 1:
@@ -129,16 +106,17 @@ def cross_validation(x_full, y_full, cv=5, n_iter=None, algorithm=None, tol=None
                 x_train.extend(x_temp)
                 y_train.extend(y_temp)
 
-        scores.append(hmm_score(x_train, y_train, x_test, y_test, n_iter=n_iter, algorithm=algorithm, tol=tol,
-                                covariance_type=covariance_type, min_covar=min_covar, n_components=n_components))
+        scores.append(hmm_score(x_train, y_train, x_test, y_test, params=params))
         if verbose > 1:
             print(".", end="")
-    print()
+    if verbose > 1:
+        print()
     return scores
 
 
 def grid_search(x_train, y_train, n_iters=None, algorithms=None, tols=None, covariance_types=None, min_covars=None,
                 n_components_list=None, verbose=0):
+    raise NotImplementedError
     if n_iters is None:
         n_iters = [DEFAULT_N_ITER]
     if algorithms == "all":
@@ -186,14 +164,170 @@ def grid_search(x_train, y_train, n_iters=None, algorithms=None, tols=None, cova
     return best_config
 
 
+def plot_accuracies(x_train, y_train):
+    averages = []
+    max_components = 15
+    for n_components in range(1, max_components+1):
+        scores = cross_validation(x_train, y_train, n_components=n_components, cv=15)
+        averages.append(np.mean(scores))
+
+    plt.title("Average $k$-fold accuracy for different $N$ components")
+    plt.xlabel("$N$ components")
+    plt.ylabel("Average accuracy")
+    plt.xticks(list(range(max_components)), list(range(1, max_components+1)))
+    plt.plot(averages)
+    plt.show()
+
+
+def pca_validate(x_train, y_train, x_test, y_test):
+    x_train_pca = []
+    for x in x_train:
+        x_centered = StandardScaler().fit_transform(x)
+        pca = PCA()
+        pca.fit(x_centered)
+        n_components = 0
+        for eigenvector, eigenvalue in zip(pca.components_, pca.explained_variance_):
+            if eigenvalue >= 1:
+                n_components += 1
+        pca = PCA(n_components=n_components)
+        x_pca = pca.fit_transform(x)
+        x_train_pca.append(x_pca)
+    config = grid_search(x_train_pca, y_train, n_components_list=[1, 2, 4, 8, 16, 32], verbose=0)
+    x_test_pca = []
+    for x in x_test:
+        x_centered = StandardScaler().fit_transform(x)
+        pca = PCA()
+        pca.fit(x_centered)
+        n_components = 0
+        for eigenvector, eigenvalue in zip(pca.components_, pca.explained_variance_):
+            if eigenvalue >= 1:
+                n_components += 1
+        pca = PCA(n_components=n_components)
+        x_pca = pca.fit_transform(x)
+        x_test_pca.append(x_pca)
+    print(hmm_score(x_train_pca, y_train, x_test_pca, y_test, **config))
+
+
+def leave_one_out(x_train, y_train, params: dict):
+    scores = []
+    for i in range(len(x_train)):
+        x = [x_ for (j, x_) in enumerate(x_train) if j != i]
+        y = [y_ for (j, y_) in enumerate(y_train) if j != i]
+        x_val = [x_train[i]]
+        y_val = [y_train[i]]
+        scores.append(hmm_score(x, y, x_val, y_val, params))
+    return scores
+
+
+def print_confusion_matrix(x_train, y_train, x_test, y_test, n_components):
+    hmm_models = train_gmm_hmm(x_train, y_train, {"n_components": n_components})
+    confusion_matrix = np.zeros((9, 9), dtype=int)
+    for recording, label in zip(x_test, y_test):
+        best_score = None
+        best_label = None
+        for model_label, model in hmm_models.items():
+            score = model.score(recording)
+            if best_score is None or score > best_score:
+                best_score = score
+                best_label = model_label
+        confusion_matrix[label][best_label] += 1
+
+    cb_close = "}"
+    cb_open = "{"
+    for i, actual_label in enumerate(confusion_matrix):
+        print(f"&\\textbf{cb_open}Sp.\\ {i+1}{cb_close} &", " & ".join(map(str, actual_label)), r"\\\cline{3-11}")
+
+
+def plot_means(max_components=10, means=None):
+    if means is None:
+        max_components = 10
+        with open("hmm_means.json", "r", encoding="utf-8") as f:
+            means = json.load(f)
+    plt.title("LOOCV on HMM\nfor different $N$ states")
+    plt.xlabel("$N$ states")
+    plt.ylabel("Average accuracy")
+    plt.xticks(list(range(max_components)), list(range(1, max_components+1)))
+    plt.plot(means)
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_recording_examples(x_train, y_train):
+    recordings = []
+    person = 0
+    for x, y in zip(x_train, y_train):
+        if person == 4:
+            break
+        if y == person:
+            recordings.append(x)
+            person += 1
+
+    x_max = max(map(len, recordings))
+    y_min = -1.5
+    y_max = 2
+    fig, axs = plt.subplots(2, 2)
+    axs[0, 0].plot(recordings[0])
+    axs[0, 0].set_xlim([0, x_max])
+    axs[0, 0].set_ylim([y_min, y_max])
+    # axs[0, 0].set_title("Sp. 1, Rec. 1")
+    axs[0, 1].plot(recordings[1])
+    # axs[0, 1].set_title("Sp. 2, Rec. 1")
+    axs[0, 1].set_xlim([0, x_max])
+    axs[0, 1].set_ylim([y_min, y_max])
+    axs[1, 0].plot(recordings[2])
+    # axs[1, 0].set_title("Sp. 3, Rec. 1")
+    axs[1, 0].set_xlim([0, x_max])
+    axs[1, 0].set_ylim([y_min, y_max])
+    axs[1, 1].plot(recordings[3])
+    # axs[1, 1].set_title("Sp. 4, Rec. 1")
+    axs[1, 1].set_xlim([0, x_max])
+    axs[1, 1].set_ylim([y_min, y_max])
+
+    for ax in axs.flat:
+        ax.set(xlabel="Time", ylabel="Energy")
+
+    # Hide x labels and tick labels for top plots and y ticks for right plots.
+    for ax in axs.flat:
+        ax.label_outer()
+    plt.suptitle("Cepstrum coefficients over time\nfor the first recording\nof the first four speakers")
+    plt.show()
+
+
 def main():
     # Set a random seed for repeatable results
-    np.random.seed(30)
+    np.random.seed(123)
+
+    max_components = 10
+
     x_train, x_test, y_train, y_test = get_x_y()
-    config = grid_search(x_train, y_train, n_components_list=[1, 2, 4, 8, 16, 32], verbose=2, n_iters=[1, 2, 4],
-                         algorithms="all", min_covars=[DEFAULT_MIN_COVAR, 0.1*DEFAULT_MIN_COVAR, 10*DEFAULT_MIN_COVAR],
-                         tols=[DEFAULT_TOL, 0.1*DEFAULT_TOL, 10*DEFAULT_TOL])
-    print(hmm_score(x_train, y_train, x_test, y_test, **config))
+
+    # plot_accuracies(x_train, y_train)
+    means = []
+    best_n_components = None
+    best_score = None
+    for n_components in range(1, max_components+1):
+        print(f"{n_components:>2} components: ")
+        scores = leave_one_out(x_train, y_train, {"n_components": n_components})
+        mean = np.mean(scores)
+        means.append(mean)
+        print(f"    Average: {mean:.3f}")
+        if best_score is None or mean > best_score:
+            best_score = mean
+            best_n_components = n_components
+    with open("hmm_means.json", "w", encoding="utf-8") as f:
+        json.dump(means, f)
+
+    print(f"Best performing n_components: {best_n_components}")
+
+    print(hmm_score(x_train, y_train, x_test, y_test, {"n_components": best_n_components}))
+    plt.title("LOOCV on HMM\nfor different $N$ states")
+    plt.xlabel("$N$ states")
+    plt.ylabel("Average accuracy")
+    plt.xticks(list(range(max_components)), list(range(1, max_components+1)))
+    plt.plot(means)
+    plt.tight_layout()
+    plt.show()
+    print_confusion_matrix(x_train, y_train, x_test, y_test, best_n_components)
 
 
 if __name__ == '__main__':
